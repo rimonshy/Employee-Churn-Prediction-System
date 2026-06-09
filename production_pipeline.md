@@ -4,12 +4,22 @@
 flowchart TD
     %% ── Data Sources ──────────────────────────────────────────
     A[(HR System<br/>HRIS / SQL)] -->|Daily extract| B
+    A -->|"Employee left → label=1 immediately<br/>90 days passed + still employed → label=0"| LHT
+
+    %% ── Data Stores ───────────────────────────────────────────
+    subgraph STORES["⓪ Data Stores"]
+        AEP[("🟢 Active Employee Pool<br/>Current employees · no labels<br/>Updated daily")]
+        LHT[("🗄️ Labeled History Table<br/>Past employees · confirmed labels<br/>Updated daily")]
+    end
+
+    A -->|"Daily snapshot<br/>of active employees"| AEP
 
     %% ── Ingestion & Validation ────────────────────────────────
     subgraph INGEST["① Ingestion & Validation"]
         B[Schema Validator<br/>check columns · dtypes · ranges]
     end
 
+    AEP -->|Scoring input| B
     B -->|Pass| C
     B -->|Fail| ERR1["🚨 Schema Alert<br/>Slack / Email<br/>Pipeline halted"]
 
@@ -50,7 +60,8 @@ flowchart TD
 
     %% ── Retraining ────────────────────────────────────────────
     subgraph RETRAIN["⑥ Retraining"]
-        R1["Collect ≥ 500<br/>new labeled samples"]
+        LHT -->|"Full history or<br/>rolling window"| R1
+        R1["Build Training Dataset<br/>≥ 500 new labeled samples"]
         R1 --> R2["Train Challenger<br/>RandomizedSearchCV · F2 scoring"]
         R2 --> R3{"Champion vs Challenger<br/>Time-aware holdout<br/>last 3 months"}
         R3 -->|"Challenger wins<br/>PR-AUC +0.02 · Recall ≥ baseline"| R4["Promote to Production<br/>MLflow Registry"]
@@ -61,6 +72,7 @@ flowchart TD
 
     %% ── Styling ───────────────────────────────────────────────
     classDef source   fill:#E3F2FD,stroke:#1565C0,color:#000
+    classDef store    fill:#FFF3E0,stroke:#E65100,color:#000
     classDef process  fill:#F3E5F5,stroke:#6A1B9A,color:#000
     classDef model    fill:#E8F5E9,stroke:#2E7D32,color:#000,font-weight:bold
     classDef serving  fill:#FFF8E1,stroke:#F57F17,color:#000
@@ -69,6 +81,7 @@ flowchart TD
     classDef alert    fill:#FFEBEE,stroke:#C62828,color:#000
 
     class A source
+    class AEP,LHT store
     class B,C,D,E process
     class F,R4 model
     class H,I,DASH serving
@@ -81,9 +94,10 @@ flowchart TD
 
 | # | Layer | Technology | Trigger |
 |---|---|---|---|
+| ⓪ | Data Stores | Active Employee Pool + Labeled History Table | Both updated daily — label=1 on departure, label=0 after 90-day window closes |
 | ① | Ingestion & Validation | SQL extract + schema checks | Daily 02:00 |
 | ② | Preprocessing | `joblib` Pipeline (sklearn) | On each batch / API call |
 | ③ | Model | Logistic Regression (tuned) via MLflow Champion | On each preprocessed input |
 | ④ | Serving | FastAPI (real-time) + Airflow (batch) | API: on-demand · Batch: daily |
 | ⑤ | Monitoring | KS test, PSI, PR-AUC tracking | Nightly drift · 90-day label lag |
-| ⑥ | Retraining | RandomizedSearchCV + Champion/Challenger gate | Triggered by alert |
+| ⑥ | Retraining | Labeled History Table → RandomizedSearchCV → Champion/Challenger | Triggered by alert |
