@@ -80,44 +80,6 @@ The dataset is downloaded automatically from GitHub on first execution.
 
 ---
 
-## Production Architecture
-
-```mermaid
-flowchart TD
-    A[("HR System\n(Workday / SAP)")] -->|nightly delta export| B[S3 Landing Zone]
-    B --> C{Data Quality\nGreat Expectations}
-    C -->|pass| D[Feature Engineering\nengineer_features.py]
-    C -->|fail| E[Data Quality Alert\nPagerDuty]
-    D --> F[Preprocessing Pipeline\npre_step.pkl · transform only]
-    F --> G[("Model Registry\nxgboost_tuned_best.pkl")]
-    G -->|predict_proba| H[Attrition Risk Scores]
-    H -->|p < 0.57| I[No Action]
-    H -->|p ≥ 0.57| J[HR Alert\nSlack / Dashboard]
-    J --> K[HR Business Partner\nIntervention]
-
-    subgraph Monitoring
-        L[Evidently AI\nData + Concept Drift]
-        M[Grafana Dashboard\nWeekly Score Distribution]
-        N{Drift\nDetected?}
-        L --> N
-        M --> N
-    end
-
-    H --> L
-    N -->|yes| O[Retraining Pipeline\nAirflow DAG]
-    O --> P{Challenger beats\nChampion + 1 pp?}
-    P -->|yes| G
-    P -->|no| Q[Keep Champion\nLog Warning]
-
-    style A fill:#66BB6A,color:#fff
-    style G fill:#1565C0,color:#fff
-    style J fill:#EF5350,color:#fff
-    style K fill:#EF5350,color:#fff
-    style E fill:#FF7043,color:#fff
-```
-
----
-
 ## Notebook Sections
 
 | # | Section | Key Content |
